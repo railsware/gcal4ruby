@@ -11,5 +11,5 @@ Gem::Specification.new do |s|
    s.rubyforge_project = 'gcal4ruby'
    s.has_rdoc = true
    s.test_files = ['test/unit.rb'] 
-   s.add_dependency('gdata4ruby', '>= 0.1.1')
+   s.add_dependency('gdata4ruby', '>= 0.1.2')
 end 

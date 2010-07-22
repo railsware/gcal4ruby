@@ -19,12 +19,12 @@
 class Time
   #Returns a ISO 8601 complete formatted string of the time
   def complete
-    self.utc.strftime("%Y%m%dT%H%M%S")
+    self.utc.strftime("%Y%m%dT%H%M%SZ")
   end
   
   def self.parse_complete(value)
     d, h = value.split("T")
-    return Time.parse(d+" "+h.gsub("Z", ""))
+    return Time.parse(d+" "+h) #.gsub("Z", ""))
   end
 end
 
@@ -60,42 +60,53 @@ module GCal4Ruby
     #Accepts a string containing a properly formatted ISO 8601 recurrence rule and loads it into the recurrence object
     def load(rec)
       attrs = rec.split("\n")
+
+      # We are only parsing the root element -- there can be nested elements with DTSTART meaning 
+      # different things for example. REFACTOR to parse these recursively.
+      scope = []
+
       attrs.each do |val|
-        key, value = val.split(":")
+        key, value = val.split(':')
+
+        key, key_props = parse_term(key)
+        value, value_props = parse_term(value)
+
         case key
+          when 'BEGIN'
+            scope << value
+          when 'END'
+            if value == scope.last
+              scope.pop
+            else
+              raise RecurrenceValueError, "Parsing iCalendar, #{value} != #{scope.last}"
+            end
           when 'DTSTART'
-            @start_time = Time.parse_complete(value)
-          when 'DTSTART;VALUE=DATE'
-            @start_time = Time.parse(value)
-            @all_day = true
-          when 'DTSTART;VALUE=DATE-TIME'
-            @start_time = Time.parse_complete(value)
-          when 'DTEND'
-            @end_time = Time.parse_complete(value)
-          when 'DTEND;VALUE=DATE'
-            @end_time = Time.parse(value)
-          when 'DTEND;VALUE=DATE-TIME'
-            @end_time = Time.parse_complete(value)
-          when 'RRULE'
-            vals = value.split(";")
-            key = ''
-            by = ''
-            int = nil
-            vals.each do |rr|
-              a, h = rr.split("=")
-              case a 
-                when 'FREQ'
-                  key = h.downcase.capitalize
-                when 'INTERVAL'
-                  int = h
-                when 'UNTIL'
-                  @repeat_until = Time.parse(value)
-                else
-                  by = h.split(",")
+            if scope.empty?
+              if key_props["VALUE"] == "DATE"
+                @start_time = time_builder(key_props["TZID"]).parse(value)
+                @all_day = true
+              else
+                @start_time = time_builder(key_props["TZID"]).parse(value)
               end
             end
-            @frequency = {key => by}
-            @frequency.merge({'interval' => int}) if int
+          when 'DTEND'
+            if scope.empty?
+                @end_time = time_builder(key_props["TZID"]).parse(value)
+            end
+          when 'RRULE'
+            if scope.empty?
+              freq = value_props["FREQ"]
+              freq = freq && freq.downcase.capitalize
+              int = value_props["INTERVAL"]
+              @repeat_until = Time.parse(value_props['UNTIL']) if value_props.has_key?('UNTIL')
+              by = %w(BYDAY BYMONTHDAY BYYEARDAY).inject([]) do |acum, by_key|
+                acum += value_props[by_key].split(',') if value_props.has_key?(by_key)
+                acum
+              end
+              
+              @frequency = {freq => by}
+              @frequency.merge!({'interval' => int.to_i}) if int
+            end
         end
       end
     end
@@ -269,5 +280,17 @@ module GCal4Ruby
         raise RecurrenceValueError, "Frequency must be a hash (see documentation)"
       end
     end
+  end
+
+protected
+  def parse_term(term)
+    parts = term.split ';'
+    head = parts.shift unless parts.first.include? '='
+    tail = Hash[*parts.map {|part| (part.split('=') + [nil])[0..1] }.flatten]
+    [head, tail]
+  end
+
+  def time_builder(zone)
+    zone && ActiveSupport::TimeZone[zone] || Time
   end
 end

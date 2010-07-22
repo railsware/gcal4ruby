@@ -1,7 +1,10 @@
 #!/usr/bin/ruby
 
 require 'rubygems'
+require 'gdata4ruby'
+$:.unshift 'lib' #use local version, not gem
 require 'gcal4ruby'
+
 include GCal4Ruby
 
 @service = Service.new
@@ -24,6 +27,9 @@ def tester
   calendar_test
   event_test
   event_recurrence_test
+  event_rrule_parser_test
+
+  render_results
 end
 
 def service_test
@@ -168,6 +174,66 @@ def event_recurrence_test
   end
 end
 
+def event_rrule_parser_test
+  puts "---Starting Event Recurrence Parser Test---"
+
+  # this is similar to a recurrence created by GCal4Ruby, times should be in UTC (because of the 'Z' at the end)
+  basic_rrule = "DTSTART:20100722T134909Z\nDTEND:20100722T144909Z\nRRULE:FREQ=WEEKLY;BYDAY=SA;\n"
+
+  puts "\n1. Parse basic RRULE"
+  basic = Recurrence.new(basic_rrule)
+  assert_equal 13, basic.start_time.utc.hour, "times should be in UTC"
+  assert_equal 49, basic.start_time.min
+  assert_equal 14, basic.end_time.utc.hour, "times should be in UTC"
+  assert_equal "UTC", basic.start_time.zone
+  assert_equal "UTC", basic.end_time.zone
+  assert basic.frequency.has_key?('Weekly')
+  assert_equal ['SA'], basic.frequency['Weekly']
+
+  # this is similar to one created by Google Calendar, including explicit TimeZone and time standard info
+  advanced_rrule = "DTSTART;TZID=America/Argentina/Buenos_Aires:20100722T190000\nDTEND;TZID=America/Argentina/Buenos_Aires:20100722T200000\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;WKST=SU\nBEGIN:VTIMEZONE\nTZID:America/Argentina/Buenos_Aires\nX-LIC-LOCATION:America/Argentina/Buenos_Aires\nBEGIN:STANDARD\nTZOFFSETFROM:-0300\nTZOFFSETTO:-0300\nTZNAME:ART\nDTSTART:19700101T000000\nEND:STANDARD\nEND:VTIMEZONE\n"
+
+  puts "\n2. Parse advanced RRULE"
+  advanced = Recurrence.new(advanced_rrule)
+  assert_equal 22, advanced.start_time.utc.hour
+  assert_equal 0, advanced.start_time.min
+  assert_equal 20, advanced.end_time && advanced.end_time.hour
+  assert advanced.frequency.has_key?('Weekly')
+  assert_equal %w(MO TU WE TH FR), advanced.frequency['Weekly']
+
+  # this one is has a complex RRULE which has interval and until
+  # and uses a different, more complex timezone just in case
+  complex_rrule = "DTSTART;TZID=Europe/Oslo:20100721T230000\nDTEND;TZID=Europe/Oslo:20100722T000000\nRRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;UNTIL=20100929T210000Z;WKST=SU\nBEGIN:VTIMEZONE\nTZID:Europe/Oslo\nX-LIC-LOCATION:Europe/Oslo\nBEGIN:DAYLIGHT\nTZOFFSETFROM:+0100\nTZOFFSETTO:+0200\nTZNAME:CEST\nDTSTART:19700329T020000\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\nEND:DAYLIGHT\nBEGIN:STANDARD\nTZOFFSETFROM:+0200\nTZOFFSETTO:+0100\nTZNAME:CET\nDTSTART:19701025T030000\nRRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\nEND:STANDARD\nEND:VTIMEZONE"
+
+  puts "\n2. Parse complex RRULE"
+  complex = Recurrence.new(complex_rrule)
+  assert_equal 21, complex.start_time.utc.hour
+  assert_equal 0, complex.start_time.min
+  assert_equal 22, complex.end_time && complex.end_time.utc.hour
+  assert complex.frequency.has_key?('Weekly')
+  assert_equal %w(WE), complex.frequency['Weekly']
+  assert complex.frequency.has_key?('interval')
+  assert_equal 2, complex.frequency['interval']
+end
+
+def assert_equal(expected, received, msg = nil)
+  assert(expected == received, [msg, "expected #{expected.inspect} but got #{received.inspect}"].compact * '; ', 1)
+end
+
+def assert(condition, msg = nil, depth = 0)
+  if condition
+    print '.'
+    @success_count ||= 0
+    @success_count += 1
+  else
+    print 'F'
+    fails << "#{msg || 'Fail'} on #{caller[depth]}"
+  end
+rescue
+  print 'E'
+  errors << "#{msg || 'Fail'}; #{$!} // #{$@[0]} on #{caller[depth]}"
+end
+
 def failed(m = nil)
   puts "Test Failed"
   puts m if m
@@ -177,6 +243,32 @@ end
 def successful(m = nil)
   puts "Test Successful"
   puts m if m
+end
+
+def render_results
+  total = @success_count + fails.size + errors.size
+  puts "\n# #{total} assertions. Results: #{@success_count} OK, #{fails.size} failures, #{errors.size} errors"
+  unless fails.empty?
+    puts "## Failures"
+    fails.each do |fail|
+      puts " * #{fail}"
+    end
+  end
+  unless errors.empty?
+    puts "## Errors"
+    errors.each do |error|
+      puts " * #{error}"
+    end
+  end
+  puts "# #{total} assertions. Results: #{@success_count} OK, #{fails.size} failures, #{errors.size} errors"
+end
+
+def errors
+  @errors ||= []
+end
+
+def fails
+  @fails ||= []
 end
 
 tester

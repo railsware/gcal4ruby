@@ -9,6 +9,12 @@
 #GCal4Ruby was created and is maintained by {Mike Reich}[mailto:mike@seabourneconsulting.com] 
 #and is licenses under the GPL v2.  Feel free to use and update, but be sure to contribute your
 #code back to the project and attribute as required by the license.
+#
+#This fork by {nachokb}[http://www.github.com/nachokb] brings some improvements related to recurring 
+#events handling (they always had 1970-01-01 as start_time), fixes some timezone issues and makes the
+#parser a little more correct (there can be non-root elements with DTSTART without breaking the parser
+#for a start) and flexible (in case Google slightly changes the format).
+#
 #===Website
 #http://cookingandcoding.com/gcal4ruby/
 #
